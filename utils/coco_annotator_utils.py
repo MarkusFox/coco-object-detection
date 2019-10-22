@@ -147,3 +147,101 @@ def create_dataset_split(json_file, output_dir, split=[0.7,0.15,0.15], supercate
             dst = output_dir + "test/" + i['file_name']
             copy(src,dst)
 
+
+def create_dataset_split_balanced(json_file, output_dir, num_testimages_per_class=7):
+    # check json file existence
+    assert (os.path.isfile(json_file)),"JSON file doesn't exist!"
+    # create output directory if not exists
+    # in this method we don't care about validation
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+        os.mkdir("%straining" % output_dir)
+        # os.mkdir("%svalidation" % output_dir)
+        os.mkdir("%stest" % output_dir)
+        print("Directory " , output_dir ,  " Created ")
+        print("Directory " , "%straining" % output_dir ,  " Created ")
+        # print("Directory " , "%svalidation" % output_dir ,  " Created ")
+        print("Directory " , "%stest" % output_dir ,  " Created ")
+    else:
+        print("Output folder already exists, please rename or choose a different name!")
+        # return
+    
+    # load annotation data from json
+    with open(json_file) as json_data:
+        data = json.load(json_data)
+        num_images = len(data['images'])
+        print("{} images found!".format(num_images))
+        
+        # shuffle images
+        shuffled_imgs = rd.sample(data['images'], num_images)
+        cat_ids = [cat['id'] for cat in data['categories']]
+        print("all category ids {}".format(cat_ids))
+        
+        cat_count = {id:0 for id in cat_ids}
+        imgs_without_anno = []
+        imgs_test = []
+        for img in shuffled_imgs:
+#             stop when we have found x test images for each class,
+#             However, in order to check all images without annotations, we will not stop early
+#             if all(value == num_testimages_per_class for value in cat_count.values()):
+#                 print("test category counts by id {}".format(cat_count))
+#                 break
+            annotations = [anno for anno in data['annotations'] if anno['image_id'] == img['id']]
+            cats = [ann['category_id'] for ann in annotations]
+            if any(cat_count[cat] == 7 for cat in cats):
+                continue
+            # only append images that have annotations
+            if len(cats) > 0:
+                for cat in cats:
+                    cat_count[cat] = cat_count[cat] + 1
+                imgs_test.append(img)
+            else:
+                imgs_without_anno.append(img)
+        
+        imgs_temp = [x for x in shuffled_imgs if x not in imgs_test]
+        imgs_train = [x for x in imgs_temp if x not in imgs_without_anno]
+        print("Training images: {}".format(len(imgs_train)))
+        print("Test images: {}".format(len(imgs_test)))
+        print("Empty images: {}".format(len(imgs_without_anno)))
+        
+        img_ids_train = [img['id'] for img in imgs_train]
+        img_ids_test = [img['id'] for img in imgs_test]
+        
+        categ_all = data['categories']
+        # TODO add Instrument as Supercategory of all
+        
+        anno_train = [anno for anno in data['annotations'] if anno['image_id'] in img_ids_train]
+        anno_test = [anno for anno in data['annotations'] if anno['image_id'] in img_ids_test]
+
+        # create json dicts
+        train_dict = {
+            #"info": {...},
+            #"licenses": [...],
+            "images": imgs_train,
+            "annotations": anno_train,
+            "categories": categ_all
+            #"segment_info": [...] <-- Only in Panoptic annotations
+        }
+        test_dict = {
+            "images": imgs_test,
+            "annotations": anno_test,
+            "categories": categ_all
+        }
+        
+        # write json files
+        with open('{}training.json'.format(output_dir), 'w') as fp:
+            json.dump(train_dict, fp)
+        with open('{}test.json'.format(output_dir), 'w') as fp:
+            json.dump(test_dict, fp)
+        
+        # copy images to respective folders
+        for i in imgs_train:
+            src = i['path'][1:]
+            dst = output_dir + "training/" + i['file_name']
+            copy(src,dst)
+        for i in imgs_test:
+            src = i['path'][1:]
+            dst = output_dir + "test/" + i['file_name']
+            copy(src,dst)
+            
+            
